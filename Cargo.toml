@@ -55,6 +55,8 @@ crossbeam = "0.8"
 
 # UI
 dioxus = { version = "0.6", features = ["desktop", "router"] }
+rfd = "0.15"
+tokio = { version = "1", features = ["time"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

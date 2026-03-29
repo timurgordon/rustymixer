@@ -7,11 +7,12 @@ license.workspace = true
 
 [dependencies]
 rustymixer-core = { workspace = true }
-rustymixer-engine = { workspace = true }
 rustymixer-decode = { workspace = true }
 rustymixer-io = { workspace = true }
-rustymixer-effects = { workspace = true }
 dioxus = { workspace = true }
+crossbeam = { workspace = true }
+rfd = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
