@@ -1,3 +1,20 @@
-//! Audio effects processors for RustyMixer.
+//! Audio effects framework for RustyMixer.
 //!
-//! Includes EQ, filter, echo, reverb, and many more effects.
+//! Provides a pluggable effects pipeline with:
+//! - [`EffectProcessor`] trait for implementing individual effects
+//! - [`EffectChain`] for sequencing multiple effects
+//! - [`EffectsRegistry`] for discovering and instantiating effects
+//! - [`EffectManifest`] / [`EffectParams`] for metadata and runtime control
+
+pub mod biquad;
+mod chain;
+mod manifest;
+mod params;
+mod processor;
+mod registry;
+
+pub use chain::{EffectChain, EffectSlot};
+pub use manifest::{EffectManifest, ParameterManifest, ParameterType};
+pub use params::EffectParams;
+pub use processor::EffectProcessor;
+pub use registry::EffectsRegistry;
