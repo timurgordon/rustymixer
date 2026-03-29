@@ -15,5 +15,16 @@ thiserror = { workspace = true }
 cpal = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["AudioContext", "AudioWorkletNode", "AudioDestinationNode"] }
+web-sys = { version = "0.3", features = [
+    "AudioContext",
+    "AudioContextOptions",
+    "AudioContextState",
+    "ScriptProcessorNode",
+    "AudioProcessingEvent",
+    "AudioBuffer",
+    "AudioDestinationNode",
+    "BaseAudioContext",
+    "AudioNode",
+] }
 wasm-bindgen = "0.2"
+js-sys = "0.3"
