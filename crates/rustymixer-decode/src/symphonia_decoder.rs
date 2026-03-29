@@ -373,9 +373,11 @@ mod tests {
 
     #[test]
     fn error_on_missing_file() {
-        let err = SymphoniaDecoder::open(Path::new("/nonexistent/file.wav"))
-            .expect_err("should fail for missing file");
-        assert!(matches!(err, DecodeError::Io(_)));
+        match SymphoniaDecoder::open(Path::new("/nonexistent/file.wav")) {
+            Err(DecodeError::Io(_)) => {}
+            Err(e) => panic!("expected Io error, got: {e}"),
+            Ok(_) => panic!("expected error for missing file"),
+        }
     }
 
     #[test]
@@ -384,8 +386,11 @@ mod tests {
         let path = dir.join("garbage.wav");
         std::fs::write(&path, b"this is not a wav file at all").unwrap();
 
-        let err = SymphoniaDecoder::open(&path).expect_err("should fail for garbage data");
-        assert!(matches!(err, DecodeError::UnsupportedFormat(_)));
+        match SymphoniaDecoder::open(&path) {
+            Err(DecodeError::UnsupportedFormat(_)) => {}
+            Err(e) => panic!("expected UnsupportedFormat error, got: {e}"),
+            Ok(_) => panic!("expected error for garbage data"),
+        }
     }
 
     #[test]
