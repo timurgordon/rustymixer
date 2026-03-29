@@ -3,8 +3,10 @@
 //! BPM/beat detection, key detection, waveform generation,
 //! and loudness analysis.
 
+pub mod key_detection;
 pub mod waveform;
 
+pub use key_detection::{KeyDetector, KeyResult, MusicalKey};
 pub use waveform::{BandData, WaveformAnalyzer, WaveformData, WaveformPoint, WaveformResolution};
 
 /// Errors that can occur during audio analysis.
