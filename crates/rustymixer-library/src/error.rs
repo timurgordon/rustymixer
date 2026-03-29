@@ -16,6 +16,9 @@ pub enum LibraryError {
 
     #[error("{0}")]
     InvalidInput(String),
+
+    #[error("metadata error: {0}")]
+    Metadata(#[from] lofty::error::LoftyError),
 }
 
 pub type Result<T> = std::result::Result<T, LibraryError>;

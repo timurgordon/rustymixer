@@ -1,5 +1,7 @@
 //! Integration tests for rustymixer-library.
 
+use std::path::Path;
+
 use rustymixer_library::*;
 
 fn test_db() -> Database {
@@ -416,4 +418,45 @@ fn concurrent_readers() {
     let db2 = Database::open(&path).unwrap();
     let count = TrackDao::count(db2.conn()).unwrap();
     assert_eq!(count, 1);
+}
+
+// ---------------------------------------------------------------------------
+// MetadataReader tests
+// ---------------------------------------------------------------------------
+
+fn fixture_path(name: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+#[test]
+fn metadata_read_wav_properties() {
+    let path = fixture_path("silence.wav");
+    let meta = MetadataReader::read(&path).unwrap();
+
+    assert_eq!(meta.sample_rate, 44100);
+    assert_eq!(meta.channels, 2);
+    // ~1 second of audio
+    assert!(meta.duration_secs > 0.9 && meta.duration_secs < 1.1);
+    // WAV with no tags — all text fields should be None
+    assert!(meta.title.is_none());
+    assert!(meta.artist.is_none());
+    assert!(meta.album.is_none());
+    assert!(meta.bpm.is_none());
+    assert!(meta.key.is_none());
+    assert!(meta.replay_gain.is_none());
+}
+
+#[test]
+fn metadata_cover_art_none_for_untagged_wav() {
+    let path = fixture_path("silence.wav");
+    let art = MetadataReader::cover_art(&path).unwrap();
+    assert!(art.is_none());
+}
+
+#[test]
+fn metadata_read_missing_file() {
+    let result = MetadataReader::read(Path::new("/tmp/does_not_exist_9999.mp3"));
+    assert!(result.is_err());
 }
