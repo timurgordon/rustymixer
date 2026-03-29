@@ -1,0 +1,12 @@
+[application]
+name = "RustyMixer"
+default_platform = "desktop"
+
+[application.tools.assets]
+directory = "assets"
+
+[desktop]
+entry = "crates/rustymixer-ui/src/main.rs"
+
+[web]
+app_dir = "crates/rustymixer-ui"

@@ -1,0 +1,11 @@
+[package]
+name = "rustymixer-effects"
+description = "Audio effects processors (EQ, filter, echo, etc.) for RustyMixer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rustymixer-core = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

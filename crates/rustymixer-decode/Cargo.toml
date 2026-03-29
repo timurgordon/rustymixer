@@ -1,0 +1,12 @@
+[package]
+name = "rustymixer-decode"
+description = "Audio file decoding using Symphonia for RustyMixer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rustymixer-core = { workspace = true }
+symphonia = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

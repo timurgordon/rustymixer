@@ -1,0 +1,70 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rustymixer-core",
+    "crates/rustymixer-engine",
+    "crates/rustymixer-decode",
+    "crates/rustymixer-io",
+    "crates/rustymixer-effects",
+    "crates/rustymixer-library",
+    "crates/rustymixer-analysis",
+    "crates/rustymixer-controllers",
+    "crates/rustymixer-broadcast",
+    "crates/rustymixer-ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/timurgordon/rustymixer"
+
+[workspace.dependencies]
+# Internal crates
+rustymixer-core = { path = "crates/rustymixer-core" }
+rustymixer-engine = { path = "crates/rustymixer-engine" }
+rustymixer-decode = { path = "crates/rustymixer-decode" }
+rustymixer-io = { path = "crates/rustymixer-io" }
+rustymixer-effects = { path = "crates/rustymixer-effects" }
+rustymixer-library = { path = "crates/rustymixer-library" }
+rustymixer-analysis = { path = "crates/rustymixer-analysis" }
+rustymixer-controllers = { path = "crates/rustymixer-controllers" }
+rustymixer-broadcast = { path = "crates/rustymixer-broadcast" }
+rustymixer-ui = { path = "crates/rustymixer-ui" }
+
+# Audio I/O
+cpal = "0.15"
+
+# Audio decoding
+symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "aac", "isomp4", "pcm"] }
+
+# Metadata
+lofty = "0.21"
+
+# DSP
+rustfft = "6"
+realfft = "3"
+rubato = "0.16"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Lock-free / concurrency
+ringbuf = "0.4"
+crossbeam = "0.8"
+
+# UI
+dioxus = { version = "0.6", features = ["desktop", "router"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"

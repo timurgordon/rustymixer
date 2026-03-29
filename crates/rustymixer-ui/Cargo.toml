@@ -1,0 +1,20 @@
+[package]
+name = "rustymixer-ui"
+description = "Dioxus-based UI for RustyMixer DJ application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rustymixer-core = { workspace = true }
+rustymixer-engine = { workspace = true }
+rustymixer-decode = { workspace = true }
+rustymixer-io = { workspace = true }
+rustymixer-effects = { workspace = true }
+dioxus = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[bin]]
+name = "rustymixer"
+path = "src/main.rs"

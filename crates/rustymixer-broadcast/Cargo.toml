@@ -1,0 +1,12 @@
+[package]
+name = "rustymixer-broadcast"
+description = "Recording and live broadcasting for RustyMixer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rustymixer-core = { workspace = true }
+ringbuf = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
