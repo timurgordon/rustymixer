@@ -41,6 +41,31 @@ impl LocationDao {
         }
     }
 
+    pub fn update(conn: &Connection, loc: &TrackLocation) -> Result<()> {
+        conn.execute(
+            "UPDATE track_locations SET directory_id = ?1, filename = ?2, filesize = ?3,
+             fs_modified_at = ?4, needs_verification = ?5 WHERE id = ?6",
+            params![
+                loc.directory_id,
+                loc.filename,
+                loc.filesize,
+                loc.fs_modified_at,
+                loc.needs_verification as i32,
+                loc.id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_by_directory(conn: &Connection, dir_id: i64) -> Result<Vec<TrackLocation>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, directory_id, filename, filesize, fs_modified_at, needs_verification
+             FROM track_locations WHERE directory_id = ?1",
+        )?;
+        let rows = stmt.query_map([dir_id], row_to_location)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     pub fn mark_needs_verification(conn: &Connection, id: i64) -> Result<()> {
         conn.execute(
             "UPDATE track_locations SET needs_verification = 1 WHERE id = ?1",

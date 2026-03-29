@@ -460,3 +460,324 @@ fn metadata_read_missing_file() {
     let result = MetadataReader::read(Path::new("/tmp/does_not_exist_9999.mp3"));
     assert!(result.is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Scanner tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn scanner_scan_directory_with_audio_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    // Copy the fixture WAV file into the music directory.
+    let fixture = fixture_path("silence.wav");
+    std::fs::copy(&fixture, music_dir.join("track1.wav")).unwrap();
+    std::fs::copy(&fixture, music_dir.join("track2.wav")).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+
+    let scanner = LibraryScanner::new(c);
+    let result = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+
+    assert_eq!(result.added, 2);
+    assert_eq!(result.updated, 0);
+    assert_eq!(result.removed, 0);
+    assert_eq!(result.errors, 0);
+    assert!(result.duration_secs >= 0.0);
+
+    // Verify tracks are in DB.
+    assert_eq!(TrackDao::count(c).unwrap(), 2);
+}
+
+#[test]
+fn scanner_incremental_scan_skips_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let fixture = fixture_path("silence.wav");
+    std::fs::copy(&fixture, music_dir.join("track1.wav")).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+
+    let scanner = LibraryScanner::new(c);
+
+    // First scan — should add one track.
+    let r1 = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+    assert_eq!(r1.added, 1);
+
+    // Second scan — nothing changed, so zero added/updated.
+    let r2 = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+    assert_eq!(r2.added, 0);
+    assert_eq!(r2.updated, 0);
+
+    // Still only one track in DB.
+    assert_eq!(TrackDao::count(c).unwrap(), 1);
+}
+
+#[test]
+fn scanner_detects_modified_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let fixture = fixture_path("silence.wav");
+    let target = music_dir.join("track.wav");
+    std::fs::copy(&fixture, &target).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+    let scanner = LibraryScanner::new(c);
+
+    // First scan.
+    scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+
+    // Simulate modification by changing mtime stored in DB.
+    let loc = LocationDao::find(c, dir_id, "track.wav").unwrap().unwrap();
+    let mut loc_modified = loc;
+    loc_modified.fs_modified_at = Some(0); // Force mismatch.
+    LocationDao::update(c, &loc_modified).unwrap();
+
+    // Second scan should detect the mtime mismatch and re-read.
+    let r2 = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+    assert_eq!(r2.updated, 1);
+    assert_eq!(r2.added, 0);
+}
+
+#[test]
+fn scanner_detects_missing_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let fixture = fixture_path("silence.wav");
+    let target = music_dir.join("track.wav");
+    std::fs::copy(&fixture, &target).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+    let scanner = LibraryScanner::new(c);
+
+    // First scan.
+    scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+
+    // Delete the file from disk.
+    std::fs::remove_file(&target).unwrap();
+
+    // Second scan should detect the missing file.
+    let r2 = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+    assert_eq!(r2.removed, 1);
+
+    // Location should be marked needs_verification.
+    let loc = LocationDao::find(c, dir_id, "track.wav").unwrap().unwrap();
+    assert!(loc.needs_verification);
+}
+
+#[test]
+fn scanner_empty_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+
+    let scanner = LibraryScanner::new(c);
+    let result = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+
+    assert_eq!(result.added, 0);
+    assert_eq!(result.updated, 0);
+    assert_eq!(result.removed, 0);
+    assert_eq!(result.errors, 0);
+    assert_eq!(TrackDao::count(c).unwrap(), 0);
+}
+
+#[test]
+fn scanner_progress_reporting() {
+    use std::cell::RefCell;
+
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let fixture = fixture_path("silence.wav");
+    std::fs::copy(&fixture, music_dir.join("a.wav")).unwrap();
+    std::fs::copy(&fixture, music_dir.join("b.wav")).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+    let scanner = LibraryScanner::new(c);
+
+    let progress_updates = RefCell::new(Vec::new());
+    scanner
+        .scan_directory(&music_dir, dir_id, &|p| {
+            progress_updates.borrow_mut().push(p);
+        })
+        .unwrap();
+    let progress_updates = progress_updates.into_inner();
+
+    // Should have at least: 1 Discovering + 2 Reading + 2 Verifying.
+    assert!(progress_updates.len() >= 5);
+
+    // First update should be Discovering phase.
+    assert_eq!(progress_updates[0].phase, ScanPhase::Discovering);
+
+    // Should have Reading phases.
+    let reading = progress_updates
+        .iter()
+        .filter(|p| p.phase == ScanPhase::Reading)
+        .count();
+    assert_eq!(reading, 2);
+
+    // Should have Verifying phases.
+    let verifying = progress_updates
+        .iter()
+        .filter(|p| p.phase == ScanPhase::Verifying)
+        .count();
+    assert_eq!(verifying, 2);
+}
+
+#[test]
+fn scanner_scan_all_uses_registered_directories() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let fixture = fixture_path("silence.wav");
+    std::fs::copy(&fixture, music_dir.join("track.wav")).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+
+    let scanner = LibraryScanner::new(c);
+    let result = scanner.scan_all(|_| {}).unwrap();
+
+    assert_eq!(result.added, 1);
+    assert_eq!(TrackDao::count(c).unwrap(), 1);
+}
+
+#[test]
+fn scanner_ignores_non_audio_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    // Create non-audio files.
+    std::fs::write(music_dir.join("readme.txt"), "hello").unwrap();
+    std::fs::write(music_dir.join("cover.jpg"), &[0xFF, 0xD8]).unwrap();
+
+    // Also copy a real audio file.
+    let fixture = fixture_path("silence.wav");
+    std::fs::copy(&fixture, music_dir.join("track.wav")).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+
+    let scanner = LibraryScanner::new(c);
+    let result = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+
+    // Only the WAV file should be added.
+    assert_eq!(result.added, 1);
+    assert_eq!(TrackDao::count(c).unwrap(), 1);
+}
+
+#[test]
+fn scanner_recursive_subdirectory() {
+    let dir = tempfile::tempdir().unwrap();
+    let music_dir = dir.path().join("music");
+    let subdir = music_dir.join("album");
+    std::fs::create_dir_all(&subdir).unwrap();
+
+    let fixture = fixture_path("silence.wav");
+    std::fs::copy(&fixture, music_dir.join("track1.wav")).unwrap();
+    std::fs::copy(&fixture, subdir.join("track2.wav")).unwrap();
+
+    let db = test_db();
+    let c = db.conn();
+    let dir_id = DirectoryDao::add(c, &music_dir.to_string_lossy()).unwrap();
+
+    let scanner = LibraryScanner::new(c);
+    let result = scanner
+        .scan_directory(&music_dir, dir_id, &|_| {})
+        .unwrap();
+
+    // Both tracks (root and subdirectory) should be added.
+    assert_eq!(result.added, 2);
+    assert_eq!(TrackDao::count(c).unwrap(), 2);
+}
+
+#[test]
+fn spawn_scan_background_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.db");
+    let music_dir = dir.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let fixture = fixture_path("silence.wav");
+    std::fs::copy(&fixture, music_dir.join("track.wav")).unwrap();
+
+    // Ensure the database is initialized.
+    {
+        let _db = Database::open(&db_path).unwrap();
+    }
+
+    let handle = spawn_scan(db_path.clone(), vec![music_dir]);
+
+    // Drain progress updates.
+    let mut progress_count = 0;
+    loop {
+        match handle.progress().try_recv() {
+            Ok(_) => progress_count += 1,
+            Err(crossbeam::channel::TryRecvError::Empty) => {
+                // Check if thread is still running.
+                if handle.is_finished() {
+                    // Drain remaining.
+                    while handle.progress().try_recv().is_ok() {
+                        progress_count += 1;
+                    }
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(crossbeam::channel::TryRecvError::Disconnected) => break,
+        }
+    }
+
+    let result = handle.join().unwrap();
+    assert_eq!(result.added, 1);
+    assert!(progress_count > 0);
+
+    // Verify the track was actually persisted.
+    let db = Database::open(&db_path).unwrap();
+    assert_eq!(TrackDao::count(db.conn()).unwrap(), 1);
+}
