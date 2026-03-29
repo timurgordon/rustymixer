@@ -7,6 +7,7 @@
 //! - [`EffectManifest`] / [`EffectParams`] for metadata and runtime control
 
 pub mod biquad;
+pub mod eq;
 mod chain;
 mod manifest;
 mod params;

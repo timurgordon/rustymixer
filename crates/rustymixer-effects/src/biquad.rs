@@ -146,6 +146,14 @@ impl BiquadFilter {
         self.a2 = a2;
     }
 
+    /// Coefficient accessors (used by [`ThreeBandEQ`](crate::eq::ThreeBandEQ) to
+    /// copy coefficients from a freshly-computed filter into an existing one).
+    pub fn b0(&self) -> f64 { self.b0 }
+    pub fn b1(&self) -> f64 { self.b1 }
+    pub fn b2(&self) -> f64 { self.b2 }
+    pub fn a1(&self) -> f64 { self.a1 }
+    pub fn a2(&self) -> f64 { self.a2 }
+
     /// Direct Form I tick for one channel.
     #[inline]
     fn tick(&mut self, ch: usize, x: f64) -> f64 {
