@@ -2,3 +2,15 @@
 //!
 //! SQLite-backed track database with metadata, playlists,
 //! crates, and search.
+
+pub mod dao;
+pub mod db;
+pub mod error;
+pub mod models;
+pub mod schema;
+
+pub use db::Database;
+pub use error::{LibraryError, Result};
+pub use models::*;
+
+pub use dao::{CrateDao, CueDao, DirectoryDao, LocationDao, PlaylistDao, SettingsDao, TrackDao};

@@ -31,7 +31,7 @@ impl SampleRate {
 
     /// Create a new `SampleRate`, returning `None` if out of range.
     pub fn new(hz: u32) -> Option<Self> {
-        if hz >= Self::MIN && hz <= Self::MAX {
+        if (Self::MIN..=Self::MAX).contains(&hz) {
             Some(Self(hz))
         } else {
             None
