@@ -152,6 +152,17 @@ pub struct Playlist {
     pub is_locked: bool,
 }
 
+/// Playlist with its track count, returned by listing operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistSummary {
+    pub id: i64,
+    pub name: String,
+    pub position: i32,
+    pub created_at: i64,
+    pub is_locked: bool,
+    pub track_count: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Crate
 // ---------------------------------------------------------------------------
@@ -161,6 +172,26 @@ pub struct Crate {
     pub id: i64,
     pub name: String,
     pub created_at: i64,
+}
+
+/// Crate with its track count, returned by listing operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrateSummary {
+    pub id: i64,
+    pub name: String,
+    pub created_at: i64,
+    pub track_count: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
+/// Result of importing a playlist file (M3U or PLS).
+#[derive(Debug, Clone)]
+pub struct ImportResult {
+    pub imported: usize,
+    pub not_found: usize,
 }
 
 // ---------------------------------------------------------------------------

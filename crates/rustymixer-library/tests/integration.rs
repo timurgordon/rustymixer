@@ -781,3 +781,397 @@ fn spawn_scan_background_thread() {
     let db = Database::open(&db_path).unwrap();
     assert_eq!(TrackDao::count(db.conn()).unwrap(), 1);
 }
+
+
+// ---------------------------------------------------------------------------
+// LibraryManager — Playlist management tests
+// ---------------------------------------------------------------------------
+
+/// Helper: create a LibraryManager from a raw in-memory Connection.
+fn manager_from_memory() -> LibraryManager {
+    use rusqlite::Connection;
+    let conn = Connection::open_in_memory().unwrap();
+    rustymixer_library::schema::MigrationManager::migrate(&conn).unwrap();
+    LibraryManager::new(conn)
+}
+
+/// Insert a sample track directly via DAO and return its id.
+fn insert_sample_track(mgr: &LibraryManager, title: &str) -> i64 {
+    let mut t = sample_new_track(1000);
+    t.title = Some(title.into());
+    TrackDao::insert(mgr.conn(), &t).unwrap()
+}
+
+#[test]
+fn manager_create_rename_delete_playlist() {
+    let mgr = manager_from_memory();
+    let pl = mgr.create_playlist("Friday Set").unwrap();
+    assert_eq!(pl.name, "Friday Set");
+
+    mgr.rename_playlist(pl.id, "Saturday Set").unwrap();
+    let summaries = mgr.list_playlists().unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].name, "Saturday Set");
+    assert_eq!(summaries[0].track_count, 0);
+
+    mgr.delete_playlist(pl.id).unwrap();
+    assert!(mgr.list_playlists().unwrap().is_empty());
+}
+
+#[test]
+fn manager_playlist_add_remove_tracks() {
+    let mgr = manager_from_memory();
+    let pl = mgr.create_playlist("Test").unwrap();
+    let t1 = insert_sample_track(&mgr, "Track A");
+    let t2 = insert_sample_track(&mgr, "Track B");
+    let t3 = insert_sample_track(&mgr, "Track C");
+
+    mgr.playlist_add_track(pl.id, t1).unwrap();
+    mgr.playlist_add_track(pl.id, t2).unwrap();
+    mgr.playlist_add_track(pl.id, t3).unwrap();
+
+    let tracks = mgr.playlist_tracks(pl.id).unwrap();
+    assert_eq!(tracks.len(), 3);
+    assert_eq!(tracks[0].id, t1);
+    assert_eq!(tracks[1].id, t2);
+    assert_eq!(tracks[2].id, t3);
+
+    // Remove middle track.
+    mgr.playlist_remove_track(pl.id, t2).unwrap();
+    let tracks = mgr.playlist_tracks(pl.id).unwrap();
+    assert_eq!(tracks.len(), 2);
+
+    // List with counts.
+    let summaries = mgr.list_playlists().unwrap();
+    assert_eq!(summaries[0].track_count, 2);
+}
+
+#[test]
+fn manager_playlist_reorder_tracks() {
+    let mgr = manager_from_memory();
+    let pl = mgr.create_playlist("Reorder Test").unwrap();
+    let t1 = insert_sample_track(&mgr, "A");
+    let t2 = insert_sample_track(&mgr, "B");
+    let t3 = insert_sample_track(&mgr, "C");
+
+    mgr.playlist_add_track(pl.id, t1).unwrap();
+    mgr.playlist_add_track(pl.id, t2).unwrap();
+    mgr.playlist_add_track(pl.id, t3).unwrap();
+
+    // Move first track to last position: [A,B,C] -> [B,C,A]
+    mgr.playlist_move_track(pl.id, 0, 2).unwrap();
+    let tracks = mgr.playlist_tracks(pl.id).unwrap();
+    assert_eq!(tracks[0].id, t2);
+    assert_eq!(tracks[1].id, t3);
+    assert_eq!(tracks[2].id, t1);
+
+    // Move last track to first position: [B,C,A] -> [A,B,C]
+    mgr.playlist_move_track(pl.id, 2, 0).unwrap();
+    let tracks = mgr.playlist_tracks(pl.id).unwrap();
+    assert_eq!(tracks[0].id, t1);
+    assert_eq!(tracks[1].id, t2);
+    assert_eq!(tracks[2].id, t3);
+}
+
+#[test]
+fn manager_duplicate_playlist() {
+    let mgr = manager_from_memory();
+    let pl = mgr.create_playlist("Original").unwrap();
+    let t1 = insert_sample_track(&mgr, "Track 1");
+    let t2 = insert_sample_track(&mgr, "Track 2");
+
+    mgr.playlist_add_track(pl.id, t1).unwrap();
+    mgr.playlist_add_track(pl.id, t2).unwrap();
+
+    let dup = mgr.duplicate_playlist(pl.id, "Copy").unwrap();
+    assert_eq!(dup.name, "Copy");
+    assert_ne!(dup.id, pl.id);
+
+    let dup_tracks = mgr.playlist_tracks(dup.id).unwrap();
+    assert_eq!(dup_tracks.len(), 2);
+    assert_eq!(dup_tracks[0].id, t1);
+    assert_eq!(dup_tracks[1].id, t2);
+
+    // Originals still intact.
+    let orig_tracks = mgr.playlist_tracks(pl.id).unwrap();
+    assert_eq!(orig_tracks.len(), 2);
+}
+
+#[test]
+fn manager_playlist_cascade_delete() {
+    let mgr = manager_from_memory();
+    let pl = mgr.create_playlist("Cascade Test").unwrap();
+    let t1 = insert_sample_track(&mgr, "Track 1");
+    mgr.playlist_add_track(pl.id, t1).unwrap();
+
+    // Deleting playlist should cascade to playlist_tracks.
+    mgr.delete_playlist(pl.id).unwrap();
+
+    // The track itself should still exist.
+    let track = TrackDao::get_by_id(mgr.conn(), t1).unwrap();
+    assert!(track.is_some());
+}
+
+// ---------------------------------------------------------------------------
+// LibraryManager — Crate management tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn manager_create_rename_delete_crate() {
+    let mgr = manager_from_memory();
+    let cr = mgr.create_crate("Favorites").unwrap();
+    assert_eq!(cr.name, "Favorites");
+
+    mgr.rename_crate(cr.id, "Top Picks").unwrap();
+    let summaries = mgr.list_crates().unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].name, "Top Picks");
+    assert_eq!(summaries[0].track_count, 0);
+
+    mgr.delete_crate(cr.id).unwrap();
+    assert!(mgr.list_crates().unwrap().is_empty());
+}
+
+#[test]
+fn manager_crate_add_remove_tracks() {
+    let mgr = manager_from_memory();
+    let cr = mgr.create_crate("Techno").unwrap();
+    let t1 = insert_sample_track(&mgr, "Techno 1");
+    let t2 = insert_sample_track(&mgr, "Techno 2");
+
+    mgr.crate_add_track(cr.id, t1).unwrap();
+    mgr.crate_add_track(cr.id, t2).unwrap();
+
+    let tracks = mgr.crate_tracks(cr.id).unwrap();
+    assert_eq!(tracks.len(), 2);
+
+    // Adding same track again is idempotent.
+    mgr.crate_add_track(cr.id, t1).unwrap();
+    let tracks = mgr.crate_tracks(cr.id).unwrap();
+    assert_eq!(tracks.len(), 2);
+
+    mgr.crate_remove_track(cr.id, t1).unwrap();
+    let tracks = mgr.crate_tracks(cr.id).unwrap();
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].id, t2);
+
+    // List with counts.
+    let summaries = mgr.list_crates().unwrap();
+    assert_eq!(summaries[0].track_count, 1);
+}
+
+#[test]
+fn manager_track_in_multiple_crates() {
+    let mgr = manager_from_memory();
+    let cr1 = mgr.create_crate("House").unwrap();
+    let cr2 = mgr.create_crate("Deep").unwrap();
+    let t1 = insert_sample_track(&mgr, "Shared Track");
+
+    mgr.crate_add_track(cr1.id, t1).unwrap();
+    mgr.crate_add_track(cr2.id, t1).unwrap();
+
+    assert_eq!(mgr.crate_tracks(cr1.id).unwrap().len(), 1);
+    assert_eq!(mgr.crate_tracks(cr2.id).unwrap().len(), 1);
+
+    // Removing from one crate doesn't affect the other.
+    mgr.crate_remove_track(cr1.id, t1).unwrap();
+    assert_eq!(mgr.crate_tracks(cr1.id).unwrap().len(), 0);
+    assert_eq!(mgr.crate_tracks(cr2.id).unwrap().len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// M3U / PLS import tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn import_m3u_with_valid_and_missing_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_from_memory();
+
+    // Set up a track with a known file path in the library.
+    let dir_id = DirectoryDao::add(mgr.conn(), dir.path().to_str().unwrap()).unwrap();
+    let loc_id = LocationDao::insert(
+        mgr.conn(),
+        &NewTrackLocation {
+            directory_id: dir_id,
+            filename: "song.mp3".into(),
+            filesize: None,
+            fs_modified_at: None,
+        },
+    )
+    .unwrap();
+    let mut t = sample_new_track(1000);
+    t.location_id = Some(loc_id);
+    TrackDao::insert(mgr.conn(), &t).unwrap();
+
+    // Write an M3U file with one matching path and one missing.
+    let m3u_path = dir.path().join("test.m3u");
+    let m3u_content = format!(
+        "#EXTM3U\n# A comment\n{}/song.mp3\n/nonexistent/missing.mp3\n",
+        dir.path().display()
+    );
+    std::fs::write(&m3u_path, m3u_content).unwrap();
+
+    let result = mgr.import_m3u(&m3u_path, "Imported Playlist").unwrap();
+    assert_eq!(result.imported, 1);
+    assert_eq!(result.not_found, 1);
+
+    // Verify the playlist was created and has the track.
+    let summaries = mgr.list_playlists().unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].name, "Imported Playlist");
+    assert_eq!(summaries[0].track_count, 1);
+}
+
+#[test]
+fn import_pls_with_valid_and_missing_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_from_memory();
+
+    // Set up a track.
+    let dir_id = DirectoryDao::add(mgr.conn(), dir.path().to_str().unwrap()).unwrap();
+    let loc_id = LocationDao::insert(
+        mgr.conn(),
+        &NewTrackLocation {
+            directory_id: dir_id,
+            filename: "track.flac".into(),
+            filesize: None,
+            fs_modified_at: None,
+        },
+    )
+    .unwrap();
+    let mut t = sample_new_track(2000);
+    t.location_id = Some(loc_id);
+    TrackDao::insert(mgr.conn(), &t).unwrap();
+
+    // Write a PLS file.
+    let pls_path = dir.path().join("test.pls");
+    let pls_content = format!(
+        "[playlist]\nFile1={}/track.flac\nTitle1=My Track\nFile2=/gone/nowhere.mp3\nNumberOfEntries=2\nVersion=2\n",
+        dir.path().display()
+    );
+    std::fs::write(&pls_path, pls_content).unwrap();
+
+    let result = mgr.import_pls(&pls_path, "PLS Import").unwrap();
+    assert_eq!(result.imported, 1);
+    assert_eq!(result.not_found, 1);
+}
+
+// ---------------------------------------------------------------------------
+// DAO-level tests for new methods
+// ---------------------------------------------------------------------------
+
+#[test]
+fn playlist_dao_get_by_id() {
+    let db = test_db();
+    let c = db.conn();
+
+    let id = PlaylistDao::create(c, "Get By ID").unwrap();
+    let pl = PlaylistDao::get_by_id(c, id).unwrap().unwrap();
+    assert_eq!(pl.name, "Get By ID");
+    assert_eq!(pl.id, id);
+
+    assert!(PlaylistDao::get_by_id(c, 9999).unwrap().is_none());
+}
+
+#[test]
+fn playlist_dao_list_with_counts() {
+    let db = test_db();
+    let c = db.conn();
+
+    let pl1 = PlaylistDao::create(c, "Empty").unwrap();
+    let pl2 = PlaylistDao::create(c, "With Tracks").unwrap();
+    let t1 = TrackDao::insert(c, &sample_new_track(1000)).unwrap();
+    let t2 = TrackDao::insert(c, &sample_new_track(2000)).unwrap();
+    PlaylistDao::add_track(c, pl2, t1).unwrap();
+    PlaylistDao::add_track(c, pl2, t2).unwrap();
+
+    let summaries = PlaylistDao::list_with_counts(c).unwrap();
+    assert_eq!(summaries.len(), 2);
+
+    let empty = summaries.iter().find(|s| s.id == pl1).unwrap();
+    assert_eq!(empty.track_count, 0);
+
+    let with_tracks = summaries.iter().find(|s| s.id == pl2).unwrap();
+    assert_eq!(with_tracks.track_count, 2);
+}
+
+#[test]
+fn playlist_dao_move_track() {
+    let db = test_db();
+    let c = db.conn();
+
+    let pl = PlaylistDao::create(c, "Move Test").unwrap();
+    let t1 = TrackDao::insert(c, &sample_new_track(1000)).unwrap();
+    let t2 = TrackDao::insert(c, &sample_new_track(2000)).unwrap();
+    let t3 = TrackDao::insert(c, &sample_new_track(3000)).unwrap();
+
+    PlaylistDao::add_track(c, pl, t1).unwrap();
+    PlaylistDao::add_track(c, pl, t2).unwrap();
+    PlaylistDao::add_track(c, pl, t3).unwrap();
+
+    // [t1, t2, t3] -> move pos 0 to pos 2 -> [t2, t3, t1]
+    PlaylistDao::move_track(c, pl, 0, 2).unwrap();
+    let tracks = PlaylistDao::tracks(c, pl).unwrap();
+    assert_eq!(tracks[0].id, t2);
+    assert_eq!(tracks[1].id, t3);
+    assert_eq!(tracks[2].id, t1);
+
+    // No-op move.
+    PlaylistDao::move_track(c, pl, 1, 1).unwrap();
+    let tracks = PlaylistDao::tracks(c, pl).unwrap();
+    assert_eq!(tracks[1].id, t3); // unchanged
+}
+
+#[test]
+fn playlist_dao_duplicate() {
+    let db = test_db();
+    let c = db.conn();
+
+    let pl = PlaylistDao::create(c, "Original").unwrap();
+    let t1 = TrackDao::insert(c, &sample_new_track(1000)).unwrap();
+    PlaylistDao::add_track(c, pl, t1).unwrap();
+
+    let dup_id = PlaylistDao::duplicate(c, pl, "Clone").unwrap();
+    assert_ne!(dup_id, pl);
+
+    let dup = PlaylistDao::get_by_id(c, dup_id).unwrap().unwrap();
+    assert_eq!(dup.name, "Clone");
+
+    let dup_tracks = PlaylistDao::tracks(c, dup_id).unwrap();
+    assert_eq!(dup_tracks.len(), 1);
+    assert_eq!(dup_tracks[0].id, t1);
+}
+
+#[test]
+fn crate_dao_get_by_id() {
+    let db = test_db();
+    let c = db.conn();
+
+    let id = CrateDao::create(c, "My Crate").unwrap();
+    let cr = CrateDao::get_by_id(c, id).unwrap().unwrap();
+    assert_eq!(cr.name, "My Crate");
+    assert_eq!(cr.id, id);
+
+    assert!(CrateDao::get_by_id(c, 9999).unwrap().is_none());
+}
+
+#[test]
+fn crate_dao_list_with_counts() {
+    let db = test_db();
+    let c = db.conn();
+
+    let cr1 = CrateDao::create(c, "Empty Crate").unwrap();
+    let cr2 = CrateDao::create(c, "Full Crate").unwrap();
+    let t1 = TrackDao::insert(c, &sample_new_track(1000)).unwrap();
+    CrateDao::add_track(c, cr2, t1).unwrap();
+
+    let summaries = CrateDao::list_with_counts(c).unwrap();
+    assert_eq!(summaries.len(), 2);
+
+    let empty = summaries.iter().find(|s| s.id == cr1).unwrap();
+    assert_eq!(empty.track_count, 0);
+
+    let full = summaries.iter().find(|s| s.id == cr2).unwrap();
+    assert_eq!(full.track_count, 1);
+}

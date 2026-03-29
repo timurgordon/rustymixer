@@ -5,9 +5,8 @@
 use rusqlite::{Connection, params};
 
 use crate::error::Result;
-use crate::models;
+use crate::models::{self, CrateSummary, Track};
 use super::track::TrackDao;
-use crate::models::Track;
 
 pub struct CrateDao;
 
@@ -19,6 +18,21 @@ impl CrateDao {
             params![name, now],
         )?;
         Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_by_id(conn: &Connection, id: i64) -> Result<Option<models::Crate>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, created_at FROM crates WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query([id])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(models::Crate {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+            })),
+            None => Ok(None),
+        }
     }
 
     pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<()> {
@@ -42,6 +56,26 @@ impl CrateDao {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 created_at: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// List all crates with their track counts.
+    pub fn list_with_counts(conn: &Connection) -> Result<Vec<CrateSummary>> {
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.name, c.created_at, COUNT(ct.track_id) AS track_count
+             FROM crates c
+             LEFT JOIN crate_tracks ct ON c.id = ct.crate_id
+             GROUP BY c.id
+             ORDER BY c.name",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(CrateSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+                track_count: row.get::<_, i64>(3)? as usize,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
