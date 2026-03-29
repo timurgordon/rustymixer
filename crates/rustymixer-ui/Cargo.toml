@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 rustymixer-core = { workspace = true }
+rustymixer-engine = { workspace = true }
 rustymixer-decode = { workspace = true }
 rustymixer-io = { workspace = true }
 dioxus = { workspace = true }
