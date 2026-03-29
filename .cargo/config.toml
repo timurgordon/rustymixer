@@ -1,0 +1,8 @@
+[alias]
+t = "test --workspace"
+c = "check --workspace"
+cl = "clippy --workspace -- -D warnings"
+b = "build --workspace"
+br = "build --workspace --release"
+wasm-core = "build -p rustymixer-core --target wasm32-unknown-unknown"
+run-ui = "run -p rustymixer-ui"
